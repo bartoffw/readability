@@ -64,6 +64,25 @@ function Readability(doc, options) {
   this._disableJSONLD = !!options.disableJSONLD;
   this._allowedVideoRegex = options.allowedVideoRegex || this.REGEXPS.videos;
   this._linkDensityModifier = options.linkDensityModifier || 0;
+  this._keepComments = options.keepComments || false;
+
+  /*if (!this._keepComments) {
+    this.DYNAMIC_REGEXPS.unlikelyCandidates.push("comment");
+    this.DYNAMIC_REGEXPS.negative.push("comment");
+    this.DYNAMIC_REGEXPS.extraneous.push("comment");
+  }*/
+  this.REGEXPS.unlikelyCandidates = new RegExp(
+    this.DYNAMIC_REGEXPS.unlikelyCandidates.join("|"),
+    "i"
+  );
+  this.REGEXPS.negative = new RegExp(
+    this.DYNAMIC_REGEXPS.negative.join("|"),
+    "i"
+  );
+  this.REGEXPS.extraneous = new RegExp(
+    this.DYNAMIC_REGEXPS.extraneous.join("|"),
+    "i"
+  );
 
   // Start with all flags set
   this._flags =
@@ -132,21 +151,101 @@ Readability.prototype = {
   // The default number of chars an article must have in order to return a result
   DEFAULT_CHAR_THRESHOLD: 500,
 
+  DYNAMIC_REGEXPS: {
+    unlikelyCandidates: [
+      "-ad-",
+      "ai2html",
+      "banner",
+      "breadcrumbs",
+      "combx",
+      "comment", // TODO: this will be updated with the comments support
+      "community",
+      "cover-wrap",
+      "disqus",
+      "extra",
+      "footer",
+      "gdpr",
+      "header",
+      "legends",
+      "menu",
+      "related",
+      "remark",
+      "replies",
+      "rss",
+      "shoutbox",
+      "sidebar",
+      "skyscraper",
+      "social",
+      "sponsor",
+      "supplemental",
+      "ad-break",
+      "agegate",
+      "pagination",
+      "pager",
+      "popup",
+      "yom-remote",
+    ],
+    negative: [
+      "-ad-",
+      "hidden",
+      "^hid$",
+      " hid$",
+      " hid ",
+      "^hid ",
+      "banner",
+      "combx",
+      "com-",
+      "comment", // TODO: this will be updated with the comments support
+      "contact",
+      "footer",
+      "gdpr",
+      "masthead",
+      "media",
+      "meta",
+      "outbrain",
+      "promo",
+      "related",
+      "scroll",
+      "share",
+      "shoutbox",
+      "sidebar",
+      "skyscraper",
+      "sponsor",
+      "shopping",
+      "tags",
+      "widget",
+    ],
+    extraneous: [
+      "print",
+      "archive",
+      "comment", // TODO: this will be updated with the comments support
+      "discuss",
+      "e[\\-]?mail",
+      "share",
+      "reply",
+      "all",
+      "login",
+      "sign",
+      "single",
+      "utility",
+    ],
+  },
+
   // All of the regular expressions in use within readability.
   // Defined up here so we don't instantiate them repeatedly in loops.
   REGEXPS: {
     // NOTE: These two regular expressions are duplicated in
     // Readability-readerable.js. Please keep both copies in sync.
-    unlikelyCandidates:
-      /-ad-|ai2html|banner|breadcrumbs|combx|comment|community|cover-wrap|disqus|extra|footer|gdpr|header|legends|menu|related|remark|replies|rss|shoutbox|sidebar|skyscraper|social|sponsor|supplemental|ad-break|agegate|pagination|pager|popup|yom-remote/i,
+    //unlikelyCandidates:
+    //  //i,
     okMaybeItsACandidate: /and|article|body|column|content|main|shadow/i,
 
     positive:
-      /article|body|content|entry|hentry|h-entry|main|page|pagination|post|text|blog|story/i,
-    negative:
-      /-ad-|hidden|^hid$| hid$| hid |^hid |banner|combx|comment|com-|contact|footer|gdpr|masthead|media|meta|outbrain|promo|related|scroll|share|shoutbox|sidebar|skyscraper|sponsor|shopping|tags|widget/i,
-    extraneous:
-      /print|archive|comment|discuss|e[\-]?mail|share|reply|all|login|sign|single|utility/i,
+      /article|body|content|entry|hentry|h-entry|heading|main|page|pagination|post|text|blog|story/i,
+    //negative:
+    //  //i,
+    //extraneous:
+    //  //i,
     byline: /byline|author|dateline|writtenby|p-author/i,
     replaceFonts: /<(\/?)font[^>]*>/gi,
     normalize: /\s{2,}/g,
@@ -666,6 +765,10 @@ Readability.prototype = {
       this._replaceBrs(doc.body);
     }
 
+    this._moveNodesUp(
+      this._getAllNodesWithTag(doc, ["h1", "h2", "h3", "h4", "h5", "h6"])
+    );
+
     this._replaceNodeTags(this._getAllNodesWithTag(doc, ["font"]), "SPAN");
   },
 
@@ -684,6 +787,24 @@ Readability.prototype = {
       next = next.nextSibling;
     }
     return next;
+  },
+
+  _isFirstElement(node) {
+    return node.parentNode.firstElementChild === node;
+  },
+
+  /**
+   * Moves nodes up in the DOM hierarchy, usually useful when
+   * getting headers out of divs (e.g. on Wikipedia)
+   */
+  _moveNodesUp(nodeList) {
+    this._forEachNode(nodeList, node => {
+      var parent = node.parentNode;
+      if (parent.tagName !== "BODY" && this._isFirstElement(node)) {
+        parent.parentNode.insertBefore(node, node.parentNode);
+        this._moveNodesUp([node]);
+      }
+    });
   },
 
   /**
@@ -1504,6 +1625,21 @@ Readability.prototype = {
           sl -= 1;
         }
       }
+
+      /*if (this._keepComments) {
+        var node = this._doc.documentElement,
+          commentRegex = new RegExp("comment");
+        while (node) {
+          matchString = node.className + " " + node.id;
+          if (commentRegex.test(matchString)) {
+            this.log("Found comments section: " + node.innerHTML)
+            articleContent.appendChild(node);
+            break;
+          } else {
+            node = this._getNextNode(node);
+          }
+        }
+      }*/
 
       if (this._debug) {
         this.log("Article content pre-prep: " + articleContent.innerHTML);
@@ -2581,7 +2717,7 @@ Readability.prototype = {
             linkDensity > 0.2 + this._linkDensityModifier
           ) {
             errs.push(
-              `Low weight and a little linky. (linkDensity=${linkDensity})`
+              `Low weight and a little linky. (linkDensity=${linkDensity}, headingDensity=${headingDensity})`
             );
           }
           if (weight >= 25 && linkDensity > 0.5 + this._linkDensityModifier) {
